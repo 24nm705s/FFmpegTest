@@ -14,6 +14,7 @@
 <body>
   <h1>MathQuill 数式入力テスト</h1>
   <div id="math-field"></div>
+  <input id="hidden-input" type="text" style="position:absolute;left:-9999px;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
   <div id="log"></div>
 
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -22,6 +23,7 @@
     const MQ = MathQuill.getInterface(2);
     const mathFieldSpan = document.getElementById('math-field');
     const logDiv = document.getElementById('log');
+    const hiddenInput = document.getElementById('hidden-input');
     
     const mathField = MQ.MathField(mathFieldSpan, {
       spaceBehavesLikeTab: true,
@@ -39,6 +41,22 @@
           logEvent('downOutOf', field.latex());
         }
       }
+    });
+
+    // スマホ対応: タッチ時に隠しinputへフォーカス
+    mathFieldSpan.addEventListener('touchstart', function() {
+      hiddenInput.style.left = '0px';
+      hiddenInput.style.position = 'static';
+      hiddenInput.focus();
+      setTimeout(() => {
+        hiddenInput.style.left = '-9999px';
+        hiddenInput.style.position = 'absolute';
+      }, 1000);
+    });
+    // 隠しinputの内容をMathQuillへ反映
+    hiddenInput.addEventListener('input', function() {
+      mathField.write(hiddenInput.value);
+      hiddenInput.value = '';
     });
 
     // その他のイベントも監視
