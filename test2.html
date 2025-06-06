@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MathQuill テストサイト</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/mathquill/0.10.1/mathquill.min.css">
+  <style>
+    body { 
+      font-family: sans-serif; 
+      margin: 2em; 
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 2em;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 1.5em;
+    }
+    #math-field { 
+      min-height: 3em; 
+      border: 2px solid #ddd; 
+      padding: 1em; 
+      width: 100%;
+      border-radius: 4px;
+      font-size: 18px;
+      background: white;
+      transition: border-color 0.2s;
+    }
+    #math-field:focus-within {
+      border-color: #4CAF50;
+      outline: none;
+    }    #hidden-input {
+      position: absolute;
+      left: -9999px;
+      top: -9999px;
+      opacity: 0;
+      pointer-events: none;
+      width: 1px;
+      height: 1px;
+      font-size: 16px;
+      border: none;
+      outline: none;
+      background: transparent;
+    }
+    #log { 
+      margin-top: 2em; 
+      background: #f9f9f9; 
+      border: 1px solid #ddd; 
+      padding: 1em; 
+      height: 300px; 
+      overflow-y: auto; 
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .log-entry { 
+      font-size: 0.9em; 
+      margin-bottom: 0.5em; 
+      padding: 2px 0;
+      border-bottom: 1px solid #eee;
+    }
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+    .log-number {
+      color: #666;
+      font-weight: bold;
+    }
+    .log-time {
+      color: #888;
+    }
+    .log-event {
+      color: #2196F3;
+      font-weight: bold;
+    }
+    .log-detail {
+      color: #333;
+    }
+    .clear-btn {
+      margin-top: 1em;
+      padding: 0.5em 1em;
+      background: #f44336;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .clear-btn:hover {
+      background: #d32f2f;
+    }
+    @media (max-width: 600px) {
+      body { margin: 1em; }
+      .container { padding: 1em; }
+      #math-field { font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📐 MathQuill 数式入力テスト</h1>
+    <div id="math-field"></div>
+    <input id="hidden-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    
+    <h3>📊 イベントログ</h3>
+    <div id="log"></div>
+    <button class="clear-btn" onclick="clearLog()">ログをクリア</button>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathquill/0.10.1/mathquill.min.js"></script>
+  <script>
+    const MQ = MathQuill.getInterface(2);
+    const mathFieldSpan = document.getElementById('math-field');
+    const logDiv = document.getElementById('log');
+    const hiddenInput = document.getElementById('hidden-input');
+    
+    const mathField = MQ.MathField(mathFieldSpan, {
+      spaceBehavesLikeTab: true,
+      leftRightIntoCmdGoes: 'up',
+      restrictMismatchedBrackets: true,
+      supSubsRequireOperand: true,
+      charsThatBreakOutOfSupSub: '+-=<>',
+      autoSubscriptNumerals: true,
+      handlers: {
+        edit: function(field) {
+          logEvent('edit', `LaTeX: ${field.latex()}`);
+        },
+        enter: function(field) {
+          logEvent('enter', `LaTeX: ${field.latex()}`);
+        },
+        upOutOf: function(field) {
+          logEvent('upOutOf', `LaTeX: ${field.latex()}`);
+        },
+        downOutOf: function(field) {
+          logEvent('downOutOf', `LaTeX: ${field.latex()}`);
+        },
+        selectOutOf: function(field) {
+          logEvent('selectOutOf', `LaTeX: ${field.latex()}`);
+        },
+        deleteOutOf: function(field) {
+          logEvent('deleteOutOf', `LaTeX: ${field.latex()}`);
+        }
+      }
+    });    // スマホ対応: タッチ時の処理
+    mathFieldSpan.addEventListener('touchstart', function(e) {
+      logEvent('touchstart', 'スマホタッチ検出');
+      e.preventDefault();
+      userIntentionallyBlurred = false; // タッチしたらフラグをリセット
+      // 少し遅延してからMathQuillにフォーカス
+      setTimeout(() => {
+        mathField.focus();
+      }, 100);
+    });
+
+    // クリック時の処理
+    mathFieldSpan.addEventListener('click', function(e) {
+      logEvent('click', 'クリック検出');
+      e.preventDefault();
+      userIntentionallyBlurred = false; // クリックしたらフラグをリセット
+      // MathQuillに直接フォーカス
+      mathField.focus();
+    });// スマホのキーボード入力をキャッチするため
+    let isComposing = false;
+    let lastInputValue = '';
+    
+    // 隠しinputでのキーイベントをMathQuillに転送
+    hiddenInput.addEventListener('keydown', function(e) {
+      logEvent('hiddenInput-keydown', `key: ${e.key || 'undefined'}, code: ${e.code || 'undefined'}`);
+      
+      // IME入力中は処理しない
+      if (isComposing) {
+        return;
+      }
+      
+      // 特殊キーの処理
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        mathField.keystroke('Backspace');
+        logEvent('hiddenInput-backspace', 'バックスペース実行');
+        return;
+      }
+      
+      if (e.key === 'Delete') {
+        e.preventDefault();
+        mathField.keystroke('Del');
+        logEvent('hiddenInput-delete', 'デリート実行');
+        return;
+      }
+      
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        mathField.keystroke('Enter');
+        logEvent('hiddenInput-enter', 'エンター実行');
+        return;
+      }
+      
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        mathField.keystroke('Left');
+        logEvent('hiddenInput-arrow', '左矢印');
+        return;
+      }
+      
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        mathField.keystroke('Right');
+        logEvent('hiddenInput-arrow', '右矢印');
+        return;
+      }
+      
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        mathField.keystroke('Up');
+        logEvent('hiddenInput-arrow', '上矢印');
+        return;
+      }
+      
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        mathField.keystroke('Down');
+        logEvent('hiddenInput-arrow', '下矢印');
+        return;
+      }
+      
+      // その他の制御キーは無視
+      if (e.key.length > 1 && !['Space', 'Tab'].includes(e.key)) {
+        return;
+      }
+    });
+    
+    // 隠しinputの内容をMathQuillへ反映（リアルタイム更新）
+    hiddenInput.addEventListener('input', function(e) {
+      const currentValue = hiddenInput.value;
+      
+      // IME入力中でも、新しい文字が追加された場合は即座に反映
+      if (currentValue && currentValue !== lastInputValue) {
+        // 前回の値からの差分を取得
+        let newChars = '';
+        if (currentValue.length > lastInputValue.length) {
+          newChars = currentValue.substring(lastInputValue.length);
+        } else {
+          // 文字が削除された場合は全体を更新
+          newChars = currentValue;
+          if (lastInputValue) {
+            // 前の文字を削除
+            for (let i = 0; i < lastInputValue.length; i++) {
+              mathField.keystroke('Backspace');
+            }
+          }
+        }
+        
+        if (newChars) {
+          logEvent('hiddenInput', `リアルタイム入力: "${newChars}"`);
+          mathField.write(newChars);
+        }
+        
+        lastInputValue = currentValue;
+        
+        // IME入力中でない場合は入力をクリア
+        if (!isComposing) {
+          hiddenInput.value = '';
+          lastInputValue = '';
+        }
+      }
+    });
+
+    // IME入力の開始と終了を監視
+    hiddenInput.addEventListener('compositionstart', function() {
+      isComposing = true;
+      lastInputValue = hiddenInput.value;
+      logEvent('hiddenInput-compositionstart', 'IME入力開始');
+    });
+
+    hiddenInput.addEventListener('compositionend', function() {
+      isComposing = false;
+      logEvent('hiddenInput-compositionend', `IME入力終了: "${hiddenInput.value}"`);
+      
+      // IME入力完了時は最終的な文字列を処理
+      const finalValue = hiddenInput.value;
+      if (finalValue !== lastInputValue) {
+        // 前の文字を削除
+        if (lastInputValue) {
+          for (let i = 0; i < lastInputValue.length; i++) {
+            mathField.keystroke('Backspace');
+          }
+        }
+        // 新しい文字を挿入
+        if (finalValue) {
+          mathField.write(finalValue);
+        }
+      }
+      
+      hiddenInput.value = '';
+      lastInputValue = '';
+    });    // スマホでのキーボード表示のため、定期的に隠しinputにフォーカスを当てる
+    let focusInterval;
+    let userIntentionallyBlurred = false;
+    
+    mathFieldSpan.addEventListener('focusin', function() {
+      logEvent('mathField-focusin', 'MathField内でフォーカス');
+      userIntentionallyBlurred = false; // フォーカスインしたらフラグをリセット
+      // スマホの場合、隠しinputにもフォーカスを当てる
+      if (isMobile()) {
+        clearInterval(focusInterval);
+        focusInterval = setInterval(() => {
+          if (document.activeElement !== hiddenInput && !userIntentionallyBlurred) {
+            hiddenInput.focus();
+          }
+        }, 500);
+      }
+    });
+
+    mathFieldSpan.addEventListener('focusout', function() {
+      logEvent('mathField-focusout', 'MathFieldからフォーカスアウト');
+      userIntentionallyBlurred = true; // ユーザーが意図的にフォーカスアウトしたフラグ
+      clearInterval(focusInterval);
+    });    // モバイルデバイス判定
+    function isMobile() {
+      return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+             ('ontouchstart' in window) || 
+             (navigator.maxTouchPoints > 0);
+    }    // 外部クリック検出（MathField外をクリックした場合）
+    document.addEventListener('click', function(e) {
+      if (!mathFieldSpan.contains(e.target) && !hiddenInput.contains(e.target)) {
+        logEvent('external-click', 'MathField外をクリック');
+        // 少し遅延してからフラグを設定（フォーカス復帰処理と競合を避ける）
+        setTimeout(() => {
+          userIntentionallyBlurred = true;
+          clearInterval(focusInterval);
+        }, 50);
+      }
+    });
+
+    // 外部タッチ検出（スマホでMathField外をタッチした場合）
+    document.addEventListener('touchstart', function(e) {
+      if (!mathFieldSpan.contains(e.target) && !hiddenInput.contains(e.target)) {
+        logEvent('external-touch', 'MathField外をタッチ');
+        // 少し遅延してからフラグを設定（フォーカス復帰処理と競合を避ける）
+        setTimeout(() => {
+          userIntentionallyBlurred = true;
+          clearInterval(focusInterval);
+        }, 50);
+      }
+    });
+
+    // その他のイベント監視
+    mathFieldSpan.addEventListener('keydown', e => {
+      logEvent('keydown', `key: ${e.key !== undefined ? e.key : 'undefined'}, code: ${e.code || 'undefined'}`);
+    });
+
+    mathFieldSpan.addEventListener('keyup', e => {
+      logEvent('keyup', `key: ${e.key !== undefined ? e.key : 'undefined'}`);
+    });
+
+    mathFieldSpan.addEventListener('input', e => {
+      logEvent('input', 'input event fired');
+    });
+
+    mathFieldSpan.addEventListener('focus', e => {
+      logEvent('focus', 'MathField focused');
+    });
+
+    mathFieldSpan.addEventListener('blur', e => {
+      logEvent('blur', 'MathField blurred');
+    });
+
+    mathFieldSpan.addEventListener('compositionstart', e => {
+      logEvent('compositionstart', 'IME composition started');
+    });
+
+    mathFieldSpan.addEventListener('compositionend', e => {
+      logEvent('compositionend', `IME composition ended: "${e.data || ''}"`);
+    });    // 隠しinputのイベントも監視
+    hiddenInput.addEventListener('focus', e => {
+      logEvent('hiddenInput-focus', '隠しinputがフォーカス');
+    });    hiddenInput.addEventListener('blur', e => {
+      logEvent('hiddenInput-blur', '隠しinputがブラー');
+      // ユーザーが意図的にフォーカスアウトしていない場合のみ自動復帰
+      if (isMobile() && !userIntentionallyBlurred) {
+        setTimeout(() => {
+          // 再度チェックして、まだユーザーが意図的にブラーしていない場合のみフォーカス復帰
+          if (!userIntentionallyBlurred) {
+            logEvent('hiddenInput-auto-focus', 'MathFieldに自動フォーカス復帰');
+            mathField.focus();
+          }
+        }, 100); // 遅延を長くして外部クリック検出との競合を避ける
+      }
+    });
+
+    // キーボードイベントも隠しinputで監視
+    hiddenInput.addEventListener('keydown', e => {
+      logEvent('hiddenInput-keydown', `key: ${e.key || 'undefined'}, code: ${e.code || 'undefined'}`);
+    });
+
+    let logCount = 0;
+    function logEvent(type, detail) {
+      logCount++;
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `<span class="log-number">${logCount}.</span> <span class="log-time">[${new Date().toLocaleTimeString()}]</span> <span class="log-event">${type}</span>: <span class="log-detail">${detail}</span>`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function clearLog() {
+      logDiv.innerHTML = '';
+      logCount = 0;
+      logEvent('system', 'ログをクリアしました');
+    }
+
+    // 初期化完了ログ
+    logEvent('system', 'MathQuill初期化完了');
+  </script>
+</body>
+</html>
