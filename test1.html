@@ -69,13 +69,12 @@
             border-color: #4CAF50;
             outline: none;
         }
-        
-        /* 隠しInput要素 */
+          /* 隠しInput要素 */
         #hidden-input {
-            position: absolute;
+            position: fixed;
             left: -9999px;
-            top: -9999px;
-            opacity: 0;
+            top: 50%;
+            opacity: 0.01;
             pointer-events: none;
             width: 1px;
             height: 1px;
@@ -83,6 +82,8 @@
             border: none;
             outline: none;
             background: transparent;
+            z-index: -1;
+            transform: translateY(-50%);
         }
         
         .output-section {
@@ -183,10 +184,11 @@
         <div class="section">
             <h2>📝 数式入力欄</h2>
             <div class="math-field-container">
-                <div id="math-field"></div>
-                <input id="hidden-input" type="text" 
+                <div id="math-field"></div>                <input id="hidden-input" type="text" 
                        autocomplete="off" autocorrect="off" 
-                       autocapitalize="off" spellcheck="false">
+                       autocapitalize="off" spellcheck="false"
+                       inputmode="text"
+                       enterkeyhint="done">
             </div>
         </div>
         
@@ -215,12 +217,12 @@
         let focusInterval = null;
         let isComposing = false;
         let lastInputValue = '';
-        
-        // モバイルデバイス判定
+          // モバイルデバイス判定
         function isMobile() {
             return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
                    ('ontouchstart' in window) || 
-                   (navigator.maxTouchPoints > 0);
+                   (navigator.maxTouchPoints > 0) ||
+                   (window.innerWidth <= 768);
         }
         
         // ログ出力機能
@@ -254,18 +256,20 @@
             const output = document.getElementById('latex-output');
             output.textContent = latex || '(空)';
         }
-        
-        // フォーカス維持システム
+          // フォーカス維持システム
         function startFocusKeepAlive() {
             if (focusInterval) clearInterval(focusInterval);
             
             if (isMobile()) {
                 focusInterval = setInterval(() => {
-                    if (!userIntentionallyBlurred && mathField.hasFocus()) {
-                        document.getElementById('hidden-input').focus();
-                        addLog('system', 'フォーカス維持のため隠しInputにフォーカス');
+                    if (!userIntentionallyBlurred && mathField && mathField.hasFocus()) {
+                        const hiddenInput = document.getElementById('hidden-input');
+                        if (document.activeElement !== hiddenInput) {
+                            hiddenInput.focus();
+                            addLog('system', 'フォーカス維持のため隠しInputにフォーカス');
+                        }
                     }
-                }, 500);
+                }, 300);
             }
         }
         
@@ -380,18 +384,32 @@
                     stopFocusKeepAlive();
                 }
             });
-            
-            // タッチ・クリックイベント
+              // タッチ・クリックイベント
             mathFieldElement.addEventListener('touchstart', function(e) {
+                e.preventDefault(); // デフォルト動作を防ぐ
                 userIntentionallyBlurred = false;
                 addLog('touch', 'MathFieldタッチ開始');
-                mathField.focus();
+                
+                // すぐに隠しInputにフォーカスを移す
+                setTimeout(() => {
+                    document.getElementById('hidden-input').focus();
+                    mathField.focus();
+                }, 10);
             });
             
             mathFieldElement.addEventListener('click', function(e) {
                 userIntentionallyBlurred = false;
                 addLog('touch', 'MathFieldクリック');
-                mathField.focus();
+                
+                if (isMobile()) {
+                    // スマホの場合は隠しInputにフォーカス
+                    setTimeout(() => {
+                        document.getElementById('hidden-input').focus();
+                        mathField.focus();
+                    }, 10);
+                } else {
+                    mathField.focus();
+                }
             });
             
             // 隠しInputイベント
@@ -413,10 +431,14 @@
                     }, 100);
                 }
             });
-            
-            hiddenInput.addEventListener('input', function() {
-                addLog('hidden', `入力イベント: "${this.value}"`);
-                processHiddenInput();
+              hiddenInput.addEventListener('input', function(e) {
+                const currentValue = this.value;
+                addLog('hidden', `入力イベント: "${currentValue}" (前回: "${lastInputValue}")`);
+                
+                // IME中でない場合のみ処理
+                if (!isComposing) {
+                    processHiddenInput();
+                }
             });
             
             hiddenInput.addEventListener('keydown', function(e) {
@@ -428,21 +450,25 @@
                     addLog('hidden', `特殊キー処理: ${e.key}`);
                 }
             });
-            
-            // IMEイベント
+              // IMEイベント
             hiddenInput.addEventListener('compositionstart', function(e) {
                 isComposing = true;
                 lastInputValue = this.value;
-                addLog('ime', 'IME開始', `データ: "${e.data}"`);
+                addLog('ime', 'IME開始', `データ: "${e.data || ''}"`);
+            });
+            
+            hiddenInput.addEventListener('compositionupdate', function(e) {
+                addLog('ime', 'IME更新', `データ: "${e.data || ''}"`);
             });
             
             hiddenInput.addEventListener('compositionend', function(e) {
                 isComposing = false;
-                addLog('ime', 'IME終了', `データ: "${e.data}"`);
+                addLog('ime', 'IME終了', `データ: "${e.data || ''}"`);
                 
+                // IME終了後に入力処理を実行
                 setTimeout(() => {
                     processHiddenInput();
-                }, 10);
+                }, 50);
             });
             
             // キーボードイベント
@@ -474,16 +500,47 @@
                     }, 50);
                 }
             });
-            
-            // 初期化完了
+              // 初期化完了
             addLog('system', 'MathQuillテストサイト初期化完了');
             addLog('system', 'PC: クリック・キーボード操作 | スマホ: タッチ・ソフトキーボード対応');
             
-            // 初期フォーカス
+            // スマホ専用の追加設定
+            if (isMobile()) {
+                addLog('system', 'モバイルモード: 隠しInput方式でキーボード制御');
+                
+                // タッチ開始時にキーボードを確実に表示
+                document.addEventListener('touchstart', function(e) {
+                    if (mathFieldElement.contains(e.target)) {
+                        e.preventDefault();
+                        const hiddenInput = document.getElementById('hidden-input');
+                        hiddenInput.focus();
+                        mathField.focus();
+                    }
+                }, { passive: false });
+                
+                // ページ可視性変更時のフォーカス復帰
+                document.addEventListener('visibilitychange', function() {
+                    if (!document.hidden && !userIntentionallyBlurred) {
+                        setTimeout(() => {
+                            if (mathField && mathField.hasFocus()) {
+                                document.getElementById('hidden-input').focus();
+                                addLog('system', 'ページ復帰時のフォーカス復帰');
+                            }
+                        }, 100);
+                    }
+                });
+            }
+              // 初期フォーカス
             setTimeout(() => {
-                mathField.focus();
-                addLog('system', '初期フォーカス設定');
-            }, 100);
+                if (isMobile()) {
+                    // スマホの場合は隠しInputにフォーカス
+                    document.getElementById('hidden-input').focus();
+                    addLog('system', '初期フォーカス設定（隠しInput）');
+                } else {
+                    mathField.focus();
+                    addLog('system', '初期フォーカス設定（MathField）');
+                }
+            }, 200);
         });
     </script>
 </body>
