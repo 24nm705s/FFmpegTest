@@ -107,8 +107,7 @@
             white-space: pre-wrap;
             border-radius: 4px;
         }
-        
-        /* ログエントリーの色分け */
+          /* ログエントリーの色分け */
         .log-entry {
             margin-bottom: 2px;
         }
@@ -119,6 +118,8 @@
         .log-keyboard { color: #9C27B0; }
         .log-system { color: #795548; }
         .log-error { color: #F44336; }
+        .log-mouse { color: #607D8B; }
+        .log-touch { color: #E91E63; }
         
         /* ボタン */
         .btn {
@@ -363,14 +364,13 @@
             
             // 隠しInput要素のイベントリスナー
             const hiddenInput = document.getElementById('hidden-input');
-            
-            // 隠しInputのイベント
-            hiddenInput.addEventListener('focus', () => {
-                logEvent('フォーカス', '隠しInputにフォーカス', 'log-focus');
+              // 隠しInputのイベント
+            hiddenInput.addEventListener('focus', (e) => {
+                logEvent('フォーカス', '隠しInputにフォーカス取得', 'log-focus');
             });
             
-            hiddenInput.addEventListener('blur', () => {
-                logEvent('フォーカス', '隠しInputからブラー', 'log-focus');
+            hiddenInput.addEventListener('blur', (e) => {
+                logEvent('フォーカス', '隠しInputからフォーカス離脱', 'log-focus');
                 
                 // スマホかつ意図的でないブラーの場合、自動復帰
                 if (isMobile() && !userIntentionallyBlurred) {
@@ -383,20 +383,42 @@
                 }
             });
             
+            hiddenInput.addEventListener('focusin', (e) => {
+                logEvent('フォーカス', '隠しInputにfocusin', 'log-focus');
+            });
+            
+            hiddenInput.addEventListener('focusout', (e) => {
+                logEvent('フォーカス', '隠しInputからfocusout', 'log-focus');
+            });
+            
             hiddenInput.addEventListener('input', (e) => {
                 logEvent('入力', `隠しInput入力: "${e.target.value}"`, 'log-input');
                 processHiddenInput();
             });
-            
-            hiddenInput.addEventListener('keydown', (e) => {
-                logEvent('キー', `隠しInputキー: ${e.key}`, 'log-keyboard');
+              hiddenInput.addEventListener('keydown', (e) => {
+                const modifiers = [];
+                if (e.ctrlKey) modifiers.push('Ctrl');
+                if (e.shiftKey) modifiers.push('Shift');
+                if (e.altKey) modifiers.push('Alt');
+                if (e.metaKey) modifiers.push('Meta');
+                
+                const modifierStr = modifiers.length > 0 ? `[${modifiers.join('+')}] ` : '';
+                logEvent('隠しInput', `キー押下: ${modifierStr}${e.key} (${e.code})`, 'log-keyboard');
                 
                 // 特殊キーの処理
                 if (['Backspace', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
                     e.preventDefault();
                     mathField.keystroke(e.key);
-                    logEvent('キー', `MathQuillに${e.key}を送信`, 'log-keyboard');
+                    logEvent('隠しInput', `MathQuillに${e.key}を送信`, 'log-keyboard');
                 }
+            });
+            
+            hiddenInput.addEventListener('keyup', (e) => {
+                logEvent('隠しInput', `キー離上: ${e.key} (${e.code})`, 'log-keyboard');
+            });
+            
+            hiddenInput.addEventListener('keypress', (e) => {
+                logEvent('隠しInput', `キー文字: "${e.key}" (charCode: ${e.charCode})`, 'log-keyboard');
             });
             
             // IME対応
@@ -414,25 +436,53 @@
             
             // MathField要素のイベント
             const mathFieldElement = document.getElementById('math-field');
-            
-            // MathFieldクリック/タッチ時
+              // MathFieldクリック/タッチ時
             mathFieldElement.addEventListener('click', (e) => {
                 userIntentionallyBlurred = false;
                 mathField.focus();
                 startFocusInterval();
-                logEvent('フォーカス', 'MathFieldクリック - フォーカス取得', 'log-focus');
+                logEvent('マウス', `MathFieldクリック (${e.clientX}, ${e.clientY}) - フォーカス取得`, 'log-focus');
+            });
+            
+            mathFieldElement.addEventListener('mousedown', (e) => {
+                logEvent('マウス', `MathFieldマウス押下 (${e.clientX}, ${e.clientY}) ボタン${e.button}`, 'log-focus');
+            });
+            
+            mathFieldElement.addEventListener('mouseup', (e) => {
+                logEvent('マウス', `MathFieldマウス離上 (${e.clientX}, ${e.clientY}) ボタン${e.button}`, 'log-focus');
             });
             
             mathFieldElement.addEventListener('touchstart', (e) => {
                 userIntentionallyBlurred = false;
                 mathField.focus();
                 startFocusInterval();
-                logEvent('フォーカス', 'MathFieldタッチ - フォーカス取得', 'log-focus');
+                const touch = e.touches[0];
+                logEvent('タッチ', `MathFieldタッチ開始 (${touch.clientX}, ${touch.clientY}) - フォーカス取得`, 'log-focus');
             });
             
-            // 外部クリック/タッチ検出
+            mathFieldElement.addEventListener('touchend', (e) => {
+                logEvent('タッチ', 'MathFieldタッチ終了', 'log-focus');
+            });
+            
+            mathFieldElement.addEventListener('touchmove', (e) => {
+                const touch = e.touches[0];
+                if (touch) {
+                    logEvent('タッチ', `MathFieldタッチ移動 (${touch.clientX}, ${touch.clientY})`, 'log-focus');
+                }
+            });
+            
+            // MathField要素のフォーカスイベント
+            mathFieldElement.addEventListener('focus', (e) => {
+                logEvent('フォーカス', 'MathFieldにフォーカス取得', 'log-focus');
+            });
+            
+            mathFieldElement.addEventListener('blur', (e) => {
+                logEvent('フォーカス', 'MathFieldからフォーカス離脱', 'log-focus');
+            });
+              // 外部クリック/タッチ検出
             document.addEventListener('click', (e) => {
                 if (!mathFieldElement.contains(e.target) && e.target !== hiddenInput) {
+                    logEvent('マウス', `外部クリック (${e.clientX}, ${e.clientY}) - ${e.target.tagName}`, 'log-focus');
                     setTimeout(() => {
                         userIntentionallyBlurred = true;
                         stopFocusInterval();
@@ -443,19 +493,51 @@
             
             document.addEventListener('touchstart', (e) => {
                 if (!mathFieldElement.contains(e.target) && e.target !== hiddenInput) {
+                    const touch = e.touches[0];
+                    logEvent('タッチ', `外部タッチ (${touch.clientX}, ${touch.clientY}) - ${e.target.tagName}`, 'log-focus');
                     setTimeout(() => {
                         userIntentionallyBlurred = true;
                         stopFocusInterval();
                         logEvent('フォーカス', '外部タッチ - 意図的ブラー', 'log-focus');
                     }, 50);
                 }
-            });
-            
-            // 一般的なキーボードイベント
+            });// 詳細なキーボードイベント監視
             document.addEventListener('keydown', (e) => {
                 if (document.activeElement === hiddenInput || mathField.hasFocus()) {
-                    logEvent('キー', `キー押下: ${e.key} (${e.code})`, 'log-keyboard');
+                    const modifiers = [];
+                    if (e.ctrlKey) modifiers.push('Ctrl');
+                    if (e.shiftKey) modifiers.push('Shift');
+                    if (e.altKey) modifiers.push('Alt');
+                    if (e.metaKey) modifiers.push('Meta');
+                    
+                    const modifierStr = modifiers.length > 0 ? `[${modifiers.join('+')}] ` : '';
+                    const target = document.activeElement === hiddenInput ? '隠しInput' : 'MathField';
+                    
+                    logEvent('キー押下', `${modifierStr}${e.key} (${e.code}) - ${target}`, 'log-keyboard');
                 }
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                if (document.activeElement === hiddenInput || mathField.hasFocus()) {
+                    const target = document.activeElement === hiddenInput ? '隠しInput' : 'MathField';
+                    logEvent('キー離上', `${e.key} (${e.code}) - ${target}`, 'log-keyboard');
+                }
+            });
+            
+            document.addEventListener('keypress', (e) => {
+                if (document.activeElement === hiddenInput || mathField.hasFocus()) {
+                    const target = document.activeElement === hiddenInput ? '隠しInput' : 'MathField';
+                    logEvent('キー文字', `"${e.key}" (charCode: ${e.charCode}) - ${target}`, 'log-keyboard');
+                }
+            });
+            
+            // MathField要素直接のキーイベント
+            mathFieldElement.addEventListener('keydown', (e) => {
+                logEvent('MathField', `直接キー押下: ${e.key} (${e.code})`, 'log-keyboard');
+            });
+            
+            mathFieldElement.addEventListener('keyup', (e) => {
+                logEvent('MathField', `直接キー離上: ${e.key} (${e.code})`, 'log-keyboard');
             });
             
             // 初期フォーカス設定
