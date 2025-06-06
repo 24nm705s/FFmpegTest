@@ -152,6 +152,7 @@
     mathFieldSpan.addEventListener('touchstart', function(e) {
       logEvent('touchstart', 'スマホタッチ検出');
       e.preventDefault();
+      userIntentionallyBlurred = false; // タッチしたらフラグをリセット
       // 少し遅延してからMathQuillにフォーカス
       setTimeout(() => {
         mathField.focus();
@@ -162,9 +163,10 @@
     mathFieldSpan.addEventListener('click', function(e) {
       logEvent('click', 'クリック検出');
       e.preventDefault();
+      userIntentionallyBlurred = false; // クリックしたらフラグをリセット
       // MathQuillに直接フォーカス
       mathField.focus();
-    });    // スマホのキーボード入力をキャッチするため
+    });// スマホのキーボード入力をキャッチするため
     let isComposing = false;
     let lastInputValue = '';
     
@@ -232,18 +234,18 @@
       
       hiddenInput.value = '';
       lastInputValue = '';
-    });
-
-    // スマホでのキーボード表示のため、定期的に隠しinputにフォーカスを当てる
+    });    // スマホでのキーボード表示のため、定期的に隠しinputにフォーカスを当てる
     let focusInterval;
+    let userIntentionallyBlurred = false;
     
     mathFieldSpan.addEventListener('focusin', function() {
       logEvent('mathField-focusin', 'MathField内でフォーカス');
+      userIntentionallyBlurred = false; // フォーカスインしたらフラグをリセット
       // スマホの場合、隠しinputにもフォーカスを当てる
       if (isMobile()) {
         clearInterval(focusInterval);
         focusInterval = setInterval(() => {
-          if (document.activeElement !== hiddenInput) {
+          if (document.activeElement !== hiddenInput && !userIntentionallyBlurred) {
             hiddenInput.focus();
           }
         }, 500);
@@ -252,15 +254,32 @@
 
     mathFieldSpan.addEventListener('focusout', function() {
       logEvent('mathField-focusout', 'MathFieldからフォーカスアウト');
+      userIntentionallyBlurred = true; // ユーザーが意図的にフォーカスアウトしたフラグ
       clearInterval(focusInterval);
-    });
-
-    // モバイルデバイス判定
+    });    // モバイルデバイス判定
     function isMobile() {
       return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
              ('ontouchstart' in window) || 
              (navigator.maxTouchPoints > 0);
     }
+
+    // 外部クリック検出（MathField外をクリックした場合）
+    document.addEventListener('click', function(e) {
+      if (!mathFieldSpan.contains(e.target) && !hiddenInput.contains(e.target)) {
+        logEvent('external-click', 'MathField外をクリック');
+        userIntentionallyBlurred = true;
+        clearInterval(focusInterval);
+      }
+    });
+
+    // 外部タッチ検出（スマホでMathField外をタッチした場合）
+    document.addEventListener('touchstart', function(e) {
+      if (!mathFieldSpan.contains(e.target) && !hiddenInput.contains(e.target)) {
+        logEvent('external-touch', 'MathField外をタッチ');
+        userIntentionallyBlurred = true;
+        clearInterval(focusInterval);
+      }
+    });
 
     // その他のイベント監視
     mathFieldSpan.addEventListener('keydown', e => {
@@ -296,10 +315,12 @@
 
     hiddenInput.addEventListener('blur', e => {
       logEvent('hiddenInput-blur', '隠しinputがブラー');
-      // ブラーしたらすぐにMathQuillにフォーカスを戻す
-      if (isMobile()) {
+      // ユーザーが意図的にフォーカスアウトしていない場合のみ自動復帰
+      if (isMobile() && !userIntentionallyBlurred) {
         setTimeout(() => {
-          mathField.focus();
+          if (!userIntentionallyBlurred) {
+            mathField.focus();
+          }
         }, 10);
       }
     });
