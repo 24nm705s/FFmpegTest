@@ -257,19 +257,15 @@
         function updateLatexOutput() {
             const latex = mathField.latex();
             document.getElementById('latex-output').textContent = latex || '（空）';
-        }
-        
-        // フォーカス維持インターバル開始
+        }        // フォーカス維持インターバル開始（index.htmlの実装を参考に改良）
         function startFocusInterval() {
             if (focusInterval) clearInterval(focusInterval);
             if (isMobile()) {
                 focusInterval = setInterval(() => {
-                    if (mathField.hasFocus() && !userIntentionallyBlurred) {
+                    if (document.activeElement !== hiddenInput && !userIntentionallyBlurred) {
                         const hiddenInput = document.getElementById('hidden-input');
-                        if (document.activeElement !== hiddenInput) {
-                            hiddenInput.focus();
-                            logEvent('システム', 'フォーカス維持のため隠しInputにフォーカス', 'log-system');
-                        }
+                        hiddenInput.focus();
+                        logEvent('システム', 'フォーカス維持のため隠しInputにフォーカス', 'log-system');
                     }
                 }, 500);
             }
@@ -282,34 +278,40 @@
                 focusInterval = null;
             }
         }
-        
-        // 隠しInputの入力処理
+          // 隠しInputの入力処理（index.htmlの実装を参考に改良）
         function processHiddenInput() {
             const hiddenInput = document.getElementById('hidden-input');
             const currentValue = hiddenInput.value;
             
-            if (!isComposing) {
+            // IME入力中でも、新しい文字が追加された場合は即座に反映
+            if (currentValue && currentValue !== lastInputValue) {
+                // 前回の値からの差分を取得
+                let newChars = '';
                 if (currentValue.length > lastInputValue.length) {
-                    // 文字追加
-                    const newChars = currentValue.slice(lastInputValue.length);
-                    for (let char of newChars) {
-                        mathField.write(char);
-                        logEvent('入力', `文字追加: "${char}"`, 'log-input');
-                    }
-                } else if (currentValue.length < lastInputValue.length) {
-                    // 文字削除
-                    const deletedCount = lastInputValue.length - currentValue.length;
-                    for (let i = 0; i < deletedCount; i++) {
-                        mathField.keystroke('Backspace');
-                        logEvent('入力', 'Backspaceキー処理', 'log-input');
+                    newChars = currentValue.substring(lastInputValue.length);
+                } else {
+                    // 文字が削除された場合は全体を更新
+                    newChars = currentValue;
+                    if (lastInputValue) {
+                        // 前の文字を削除
+                        for (let i = 0; i < lastInputValue.length; i++) {
+                            mathField.keystroke('Backspace');
+                        }
                     }
                 }
                 
-                // 通常入力の場合は即座にクリア
-                hiddenInput.value = '';
-                lastInputValue = '';
-            } else {
+                if (newChars) {
+                    logEvent('入力', `リアルタイム入力: "${newChars}"`, 'log-input');
+                    mathField.write(newChars);
+                }
+                
                 lastInputValue = currentValue;
+                
+                // IME入力中でない場合は入力をクリア
+                if (!isComposing) {
+                    hiddenInput.value = '';
+                    lastInputValue = '';
+                }
             }
             
             updateLatexOutput();
@@ -368,22 +370,21 @@
             hiddenInput.addEventListener('focus', (e) => {
                 logEvent('フォーカス', '隠しInputにフォーカス取得', 'log-focus');
             });
-            
-            hiddenInput.addEventListener('blur', (e) => {
+              hiddenInput.addEventListener('blur', (e) => {
                 logEvent('フォーカス', '隠しInputからフォーカス離脱', 'log-focus');
                 
-                // スマホかつ意図的でないブラーの場合、自動復帰
+                // ユーザーが意図的にフォーカスアウトしていない場合のみ自動復帰
                 if (isMobile() && !userIntentionallyBlurred) {
                     setTimeout(() => {
-                        if (!userIntentionallyBlurred && mathField.hasFocus()) {
+                        // 再度チェックして、まだユーザーが意図的にブラーしていない場合のみフォーカス復帰
+                        if (!userIntentionallyBlurred) {
+                            logEvent('システム', 'MathFieldに自動フォーカス復帰', 'log-system');
                             mathField.focus();
-                            logEvent('システム', 'MathQuillに自動フォーカス復帰', 'log-system');
                         }
-                    }, 100);
+                    }, 100); // 遅延を長くして外部クリック検出との競合を避ける
                 }
             });
-            
-            hiddenInput.addEventListener('focusin', (e) => {
+              hiddenInput.addEventListener('focusin', (e) => {
                 logEvent('フォーカス', '隠しInputにfocusin', 'log-focus');
             });
             
@@ -420,69 +421,77 @@
             hiddenInput.addEventListener('keypress', (e) => {
                 logEvent('隠しInput', `キー文字: "${e.key}" (charCode: ${e.charCode})`, 'log-keyboard');
             });
-            
-            // IME対応
+              // IME対応（index.htmlの実装を参考に改良）
             hiddenInput.addEventListener('compositionstart', (e) => {
                 isComposing = true;
                 lastInputValue = hiddenInput.value;
-                logEvent('IME', '日本語入力開始', 'log-input');
+                logEvent('IME', 'IME入力開始', 'log-input');
             });
             
             hiddenInput.addEventListener('compositionend', (e) => {
                 isComposing = false;
-                logEvent('IME', `日本語入力確定: "${e.data}"`, 'log-input');
-                processHiddenInput();
+                logEvent('IME', `IME入力終了: "${hiddenInput.value}"`, 'log-input');
+                
+                // IME入力完了時は最終的な文字列を処理
+                const finalValue = hiddenInput.value;
+                if (finalValue !== lastInputValue) {
+                    // 前の文字を削除
+                    if (lastInputValue) {
+                        for (let i = 0; i < lastInputValue.length; i++) {
+                            mathField.keystroke('Backspace');
+                        }
+                    }
+                    // 新しい文字を挿入
+                    if (finalValue) {
+                        mathField.write(finalValue);
+                    }
+                }
+                
+                hiddenInput.value = '';
+                lastInputValue = '';
+                updateLatexOutput();
             });
             
             // MathField要素のイベント
-            const mathFieldElement = document.getElementById('math-field');
-              // MathFieldクリック/タッチ時
+            const mathFieldElement = document.getElementById('math-field');            // MathFieldクリック/タッチ時（index.htmlの実装を参考に改良）
             mathFieldElement.addEventListener('click', (e) => {
-                userIntentionallyBlurred = false;
+                logEvent('マウス', `MathFieldクリック (${e.clientX}, ${e.clientY})`, 'log-mouse');
+                e.preventDefault();
+                userIntentionallyBlurred = false; // クリックしたらフラグをリセット
                 mathField.focus();
-                startFocusInterval();
-                logEvent('マウス', `MathFieldクリック (${e.clientX}, ${e.clientY}) - フォーカス取得`, 'log-focus');
-            });
-            
-            mathFieldElement.addEventListener('mousedown', (e) => {
-                logEvent('マウス', `MathFieldマウス押下 (${e.clientX}, ${e.clientY}) ボタン${e.button}`, 'log-focus');
-            });
-            
-            mathFieldElement.addEventListener('mouseup', (e) => {
-                logEvent('マウス', `MathFieldマウス離上 (${e.clientX}, ${e.clientY}) ボタン${e.button}`, 'log-focus');
             });
             
             mathFieldElement.addEventListener('touchstart', (e) => {
-                userIntentionallyBlurred = false;
-                mathField.focus();
-                startFocusInterval();
                 const touch = e.touches[0];
-                logEvent('タッチ', `MathFieldタッチ開始 (${touch.clientX}, ${touch.clientY}) - フォーカス取得`, 'log-focus');
+                logEvent('タッチ', `MathFieldタッチ開始 (${touch.clientX}, ${touch.clientY})`, 'log-touch');
+                e.preventDefault();
+                userIntentionallyBlurred = false; // タッチしたらフラグをリセット
+                // 少し遅延してからMathQuillにフォーカス
+                setTimeout(() => {
+                    mathField.focus();
+                }, 100);
+            });            mathFieldElement.addEventListener('touchend', (e) => {
+                logEvent('タッチ', 'MathFieldタッチ終了', 'log-touch');
             });
-            
-            mathFieldElement.addEventListener('touchend', (e) => {
-                logEvent('タッチ', 'MathFieldタッチ終了', 'log-focus');
-            });
-            
-            mathFieldElement.addEventListener('touchmove', (e) => {
-                const touch = e.touches[0];
-                if (touch) {
-                    logEvent('タッチ', `MathFieldタッチ移動 (${touch.clientX}, ${touch.clientY})`, 'log-focus');
+              // MathField要素のフォーカスイベント（focusinに変更）
+            mathFieldElement.addEventListener('focusin', (e) => {
+                logEvent('フォーカス', 'MathField内でフォーカス取得', 'log-focus');
+                userIntentionallyBlurred = false; // フォーカスインしたらフラグをリセット
+                // スマホの場合、隠しinputにもフォーカスを当てる
+                if (isMobile()) {
+                    startFocusInterval();
                 }
             });
             
-            // MathField要素のフォーカスイベント
-            mathFieldElement.addEventListener('focus', (e) => {
-                logEvent('フォーカス', 'MathFieldにフォーカス取得', 'log-focus');
-            });
-            
-            mathFieldElement.addEventListener('blur', (e) => {
+            mathFieldElement.addEventListener('focusout', (e) => {
                 logEvent('フォーカス', 'MathFieldからフォーカス離脱', 'log-focus');
-            });
-              // 外部クリック/タッチ検出
+                userIntentionallyBlurred = true; // ユーザーが意図的にフォーカスアウトしたフラグ
+                stopFocusInterval();
+            });            // 外部クリック/タッチ検出
             document.addEventListener('click', (e) => {
-                if (!mathFieldElement.contains(e.target) && e.target !== hiddenInput) {
-                    logEvent('マウス', `外部クリック (${e.clientX}, ${e.clientY}) - ${e.target.tagName}`, 'log-focus');
+                if (!mathFieldElement.contains(e.target) && !hiddenInput.contains(e.target)) {
+                    logEvent('マウス', `外部クリック (${e.clientX}, ${e.clientY}) - ${e.target.tagName}`, 'log-mouse');
+                    // 少し遅延してからフラグを設定（フォーカス復帰処理と競合を避ける）
                     setTimeout(() => {
                         userIntentionallyBlurred = true;
                         stopFocusInterval();
@@ -492,9 +501,10 @@
             });
             
             document.addEventListener('touchstart', (e) => {
-                if (!mathFieldElement.contains(e.target) && e.target !== hiddenInput) {
+                if (!mathFieldElement.contains(e.target) && !hiddenInput.contains(e.target)) {
                     const touch = e.touches[0];
-                    logEvent('タッチ', `外部タッチ (${touch.clientX}, ${touch.clientY}) - ${e.target.tagName}`, 'log-focus');
+                    logEvent('タッチ', `外部タッチ (${touch.clientX}, ${touch.clientY}) - ${e.target.tagName}`, 'log-touch');
+                    // 少し遅延してからフラグを設定（フォーカス復帰処理と競合を避ける）
                     setTimeout(() => {
                         userIntentionallyBlurred = true;
                         stopFocusInterval();
@@ -539,11 +549,9 @@
             mathFieldElement.addEventListener('keyup', (e) => {
                 logEvent('MathField', `直接キー離上: ${e.key} (${e.code})`, 'log-keyboard');
             });
-            
-            // 初期フォーカス設定
+              // 初期フォーカス設定
             if (isMobile()) {
                 mathField.focus();
-                startFocusInterval();
                 logEvent('システム', 'モバイル環境でMathQuillに初期フォーカス', 'log-system');
             }
             
