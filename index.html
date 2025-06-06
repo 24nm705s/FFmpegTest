@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FFmpeg テストページ (SharedArrayBuffer不使用)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+        
+        .test-section h2 {
+            color: #555;
+            margin-top: 0;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        
+        .status.loading {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .file-input {
+            margin: 10px 0;
+        }
+        
+        video {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .progress {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background-color: #28a745;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .log-area {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 FFmpeg テストページ</h1>
+        <p style="text-align: center; color: #666;">SharedArrayBufferを使用せずにCDN経由でFFmpegを読み込むテスト</p>
+        
+        <!-- FFmpeg読み込みテスト -->
+        <div class="test-section">
+            <h2>1. FFmpeg ライブラリ読み込みテスト</h2>
+            <div id="load-status" class="status loading">読み込み中...</div>
+            <button onclick="testFFmpegLoad()" id="load-btn">再テスト</button>
+        </div>
+        
+        <!-- 初期化テスト -->
+        <div class="test-section">
+            <h2>2. FFmpeg 初期化テスト</h2>
+            <div id="init-status" class="status">未実行</div>
+            <button onclick="testFFmpegInit()" id="init-btn" disabled>初期化テスト</button>
+        </div>
+        
+        <!-- 動画処理テスト -->
+        <div class="test-section">
+            <h2>3. 動画処理テスト</h2>
+            <div id="process-status" class="status">未実行</div>
+            
+            <div class="file-input">
+                <label for="video-input">動画ファイルを選択:</label>
+                <input type="file" id="video-input" accept="video/*">
+            </div>
+            
+            <div>
+                <button onclick="createTestVideo()" id="create-btn" disabled>テスト動画作成</button>
+                <button onclick="processVideo()" id="process-btn" disabled>動画処理実行</button>
+            </div>
+            
+            <div class="progress" style="display: none;" id="progress-container">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+            
+            <div style="margin-top: 20px;">
+                <video id="output-video" controls style="display: none;"></video>
+            </div>
+        </div>
+        
+        <!-- ログ表示エリア -->
+        <div class="test-section">
+            <h2>4. 実行ログ</h2>
+            <div id="log-area" class="log-area"></div>
+            <button onclick="clearLog()">ログクリア</button>
+        </div>
+    </div>
+
+    <!-- FFmpeg CDN読み込み -->
+    <script type="module">
+        // FFmpegとCoreの読み込み
+        let FFmpeg, fetchFile, toBlobURL;
+        let ffmpeg = null;
+        let isLoaded = false;
+        let isInitialized = false;
+
+        // ログ出力関数
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logArea = document.getElementById('log-area');
+            logArea.textContent += `[${timestamp}] ${message}\n`;
+            logArea.scrollTop = logArea.scrollHeight;
+            console.log(message);
+        }
+
+        // ステータス更新関数
+        function updateStatus(elementId, status, message) {
+            const element = document.getElementById(elementId);
+            element.className = `status ${status}`;
+            element.textContent = message;
+        }
+
+        // ログクリア関数
+        window.clearLog = function() {
+            document.getElementById('log-area').textContent = '';
+        }
+
+        // FFmpeg読み込みテスト
+        window.testFFmpegLoad = async function() {
+            try {
+                updateStatus('load-status', 'loading', '読み込み中...');
+                log('FFmpegライブラリの読み込みを開始...');
+                
+                // CDN経由でFFmpegを読み込み
+                const FFmpegModule = await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js');
+                const UtilModule = await import('https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js');
+                
+                FFmpeg = FFmpegModule.FFmpeg;
+                fetchFile = UtilModule.fetchFile;
+                toBlobURL = UtilModule.toBlobURL;
+                
+                log('FFmpegライブラリの読み込み完了');
+                updateStatus('load-status', 'success', '読み込み成功');
+                
+                isLoaded = true;
+                document.getElementById('init-btn').disabled = false;
+                
+            } catch (error) {
+                log(`FFmpeg読み込みエラー: ${error.message}`);
+                updateStatus('load-status', 'error', `読み込み失敗: ${error.message}`);
+                isLoaded = false;
+            }
+        }
+
+        // FFmpeg初期化テスト
+        window.testFFmpegInit = async function() {
+            if (!isLoaded) {
+                log('エラー: FFmpegライブラリが読み込まれていません');
+                return;
+            }
+
+            try {
+                updateStatus('init-status', 'loading', '初期化中...');
+                log('FFmpegの初期化を開始...');
+                
+                ffmpeg = new FFmpeg();
+                
+                // プログレスイベントの設定
+                ffmpeg.on('progress', ({ progress, time }) => {
+                    const progressBar = document.getElementById('progress-bar');
+                    if (progressBar) {
+                        progressBar.style.width = `${progress * 100}%`;
+                    }
+                    log(`処理進行中: ${Math.round(progress * 100)}% (時間: ${time}μs)`);
+                });
+
+                // ログイベントの設定
+                ffmpeg.on('log', ({ message }) => {
+                    log(`FFmpeg: ${message}`);
+                });
+
+                // Corrected baseURL for @ffmpeg/core UMD build
+                const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
+                const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
+                const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
+                // Corrected worker script name for the UMD build
+                const workerURL = `${baseURL}/ffmpeg-core.worker.js`; 
+                
+                await ffmpeg.load({
+                    coreURL,
+                    wasmURL,
+                    workerURL
+                });
+                
+                log('FFmpegの初期化完了');
+                updateStatus('init-status', 'success', '初期化成功');
+                
+                isInitialized = true;
+                document.getElementById('create-btn').disabled = false;
+                document.getElementById('process-btn').disabled = false;
+                
+            } catch (error) {
+                log(`FFmpeg初期化エラー: ${error.message}`);
+                updateStatus('init-status', 'error', `初期化失敗: ${error.message}`);
+                isInitialized = false;
+            }
+        }
+
+        // テスト動画作成
+        window.createTestVideo = async function() {
+            if (!isInitialized) {
+                log('エラー: FFmpegが初期化されていません');
+                return;
+            }
+
+            try {
+                updateStatus('process-status', 'loading', 'テスト動画を作成中...');
+                log('テスト動画の作成を開始...');
+                
+                document.getElementById('progress-container').style.display = 'block';
+                
+                // 簡単なテスト動画を作成（5秒間の色変化）
+                await ffmpeg.exec([
+                    '-f', 'lavfi',
+                    '-i', 'testsrc2=duration=5:size=640x480:rate=30',
+                    '-c:v', 'libx264',
+                    '-pix_fmt', 'yuv420p',
+                    'test_output.mp4'
+                ]);
+                
+                // 作成された動画を取得
+                const fileData = await ffmpeg.readFile('test_output.mp4');
+                const videoBlob = new Blob([fileData.buffer], { type: 'video/mp4' });
+                const videoURL = URL.createObjectURL(videoBlob);
+                
+                // 動画を表示
+                const videoElement = document.getElementById('output-video');
+                videoElement.src = videoURL;
+                videoElement.style.display = 'block';
+                
+                log('テスト動画の作成完了');
+                updateStatus('process-status', 'success', 'テスト動画作成成功');
+                
+                document.getElementById('progress-container').style.display = 'none';
+                
+            } catch (error) {
+                log(`テスト動画作成エラー: ${error.message}`);
+                updateStatus('process-status', 'error', `作成失敗: ${error.message}`);
+                document.getElementById('progress-container').style.display = 'none';
+            }
+        }
+
+        // 動画処理実行
+        window.processVideo = async function() {
+            if (!isInitialized) {
+                log('エラー: FFmpegが初期化されていません');
+                return;
+            }
+
+            const fileInput = document.getElementById('video-input');
+            if (!fileInput.files[0]) {
+                log('エラー: 動画ファイルが選択されていません');
+                return;
+            }
+
+            try {
+                updateStatus('process-status', 'loading', '動画を処理中...');
+                log('動画処理を開始...');
+                
+                document.getElementById('progress-container').style.display = 'block';
+                
+                const inputFile = fileInput.files[0];
+                const inputData = await fetchFile(inputFile);
+                
+                // 入力ファイルをFFmpegに書き込み
+                await ffmpeg.writeFile('input.mp4', inputData);
+                
+                // 動画処理（例：サイズ変更とフォーマット変換）
+                await ffmpeg.exec([
+                    '-i', 'input.mp4',
+                    '-vf', 'scale=640:480',
+                    '-c:v', 'libx264',
+                    '-crf', '23',
+                    '-c:a', 'aac',
+                    'output.mp4'
+                ]);
+                
+                // 処理された動画を取得
+                const outputData = await ffmpeg.readFile('output.mp4');
+                const outputBlob = new Blob([outputData.buffer], { type: 'video/mp4' });
+                const outputURL = URL.createObjectURL(outputBlob);
+                
+                // 処理された動画を表示
+                const videoElement = document.getElementById('output-video');
+                videoElement.src = outputURL;
+                videoElement.style.display = 'block';
+                
+                log('動画処理完了');
+                updateStatus('process-status', 'success', '動画処理成功');
+                
+                document.getElementById('progress-container').style.display = 'none';
+                
+            } catch (error) {
+                log(`動画処理エラー: ${error.message}`);
+                updateStatus('process-status', 'error', `処理失敗: ${error.message}`);
+                document.getElementById('progress-container').style.display = 'none';
+            }
+        }
+
+        // ページ読み込み時にFFmpeg読み込みテストを実行
+        document.addEventListener('DOMContentLoaded', function() {
+            log('ページ読み込み完了');
+            testFFmpegLoad();
+        });
+    </script>
+</body>
+</html>
