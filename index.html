@@ -164,33 +164,74 @@
       e.preventDefault();
       // MathQuillに直接フォーカス
       mathField.focus();
-    });
-
-    // スマホのキーボード入力をキャッチするため
+    });    // スマホのキーボード入力をキャッチするため
     let isComposing = false;
+    let lastInputValue = '';
     
-    // 隠しinputの内容をMathQuillへ反映
+    // 隠しinputの内容をMathQuillへ反映（リアルタイム更新）
     hiddenInput.addEventListener('input', function() {
-      if (hiddenInput.value && !isComposing) {
-        logEvent('hiddenInput', `入力値: "${hiddenInput.value}"`);
-        mathField.write(hiddenInput.value);
-        hiddenInput.value = '';
+      const currentValue = hiddenInput.value;
+      
+      // IME入力中でも、新しい文字が追加された場合は即座に反映
+      if (currentValue && currentValue !== lastInputValue) {
+        // 前回の値からの差分を取得
+        let newChars = '';
+        if (currentValue.length > lastInputValue.length) {
+          newChars = currentValue.substring(lastInputValue.length);
+        } else {
+          // 文字が削除された場合は全体を更新
+          newChars = currentValue;
+          if (lastInputValue) {
+            // 前の文字を削除
+            for (let i = 0; i < lastInputValue.length; i++) {
+              mathField.keystroke('Backspace');
+            }
+          }
+        }
+        
+        if (newChars) {
+          logEvent('hiddenInput', `リアルタイム入力: "${newChars}"`);
+          mathField.write(newChars);
+        }
+        
+        lastInputValue = currentValue;
+        
+        // IME入力中でない場合は入力をクリア
+        if (!isComposing) {
+          hiddenInput.value = '';
+          lastInputValue = '';
+        }
       }
     });
 
     // IME入力の開始と終了を監視
     hiddenInput.addEventListener('compositionstart', function() {
       isComposing = true;
+      lastInputValue = hiddenInput.value;
       logEvent('hiddenInput-compositionstart', 'IME入力開始');
     });
 
     hiddenInput.addEventListener('compositionend', function() {
       isComposing = false;
       logEvent('hiddenInput-compositionend', `IME入力終了: "${hiddenInput.value}"`);
-      if (hiddenInput.value) {
-        mathField.write(hiddenInput.value);
-        hiddenInput.value = '';
+      
+      // IME入力完了時は最終的な文字列を処理
+      const finalValue = hiddenInput.value;
+      if (finalValue !== lastInputValue) {
+        // 前の文字を削除
+        if (lastInputValue) {
+          for (let i = 0; i < lastInputValue.length; i++) {
+            mathField.keystroke('Backspace');
+          }
+        }
+        // 新しい文字を挿入
+        if (finalValue) {
+          mathField.write(finalValue);
+        }
       }
+      
+      hiddenInput.value = '';
+      lastInputValue = '';
     });
 
     // スマホでのキーボード表示のため、定期的に隠しinputにフォーカスを当てる
