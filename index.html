@@ -43,13 +43,22 @@
 
     // その他のイベントも監視
     mathFieldSpan.addEventListener('keydown', e => {
-      logEvent('keydown', `key: ${e.key}`);
+      logEvent('keydown', `key: ${e.key !== undefined ? e.key : 'undefined'}`);
+    });
+    mathFieldSpan.addEventListener('input', e => {
+      logEvent('input', '');
     });
     mathFieldSpan.addEventListener('focus', e => {
       logEvent('focus', '');
     });
     mathFieldSpan.addEventListener('blur', e => {
       logEvent('blur', '');
+    });
+    mathFieldSpan.addEventListener('compositionstart', e => {
+      logEvent('compositionstart', '');
+    });
+    mathFieldSpan.addEventListener('compositionend', e => {
+      logEvent('compositionend', '');
     });
 
     let logCount = 0;
