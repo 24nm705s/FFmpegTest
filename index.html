@@ -166,40 +166,75 @@
       mathField.focus();
     });    // スマホのキーボード入力をキャッチするため
     let isComposing = false;
-    let inputBuffer = '';
+    let lastInputValue = '';
     
-    // 隠しinputの内容をMathQuillへ反映（リアルタイム）
+    // 隠しinputの内容をMathQuillへ反映（リアルタイム更新）
     hiddenInput.addEventListener('input', function() {
-      if (!isComposing && hiddenInput.value) {
-        // 1文字ずつ処理してリアルタイム更新
-        const newChars = hiddenInput.value.slice(inputBuffer.length);
+      const currentValue = hiddenInput.value;
+      
+      // IME入力中でも、新しい文字が追加された場合は即座に反映
+      if (currentValue && currentValue !== lastInputValue) {
+        // 前回の値からの差分を取得
+        let newChars = '';
+        if (currentValue.length > lastInputValue.length) {
+          newChars = currentValue.substring(lastInputValue.length);
+        } else {
+          // 文字が削除された場合は全体を更新
+          newChars = currentValue;
+          if (lastInputValue) {
+            // 前の文字を削除
+            for (let i = 0; i < lastInputValue.length; i++) {
+              mathField.keystroke('Backspace');
+            }
+          }
+        }
+        
         if (newChars) {
           logEvent('hiddenInput', `リアルタイム入力: "${newChars}"`);
           mathField.write(newChars);
         }
-        inputBuffer = hiddenInput.value;
+        
+        lastInputValue = currentValue;
+        
+        // IME入力中でない場合は入力をクリア
+        if (!isComposing) {
+          hiddenInput.value = '';
+          lastInputValue = '';
+        }
       }
     });
 
     // IME入力の開始と終了を監視
     hiddenInput.addEventListener('compositionstart', function() {
       isComposing = true;
-      inputBuffer = hiddenInput.value;
+      lastInputValue = hiddenInput.value;
       logEvent('hiddenInput-compositionstart', 'IME入力開始');
     });
 
     hiddenInput.addEventListener('compositionend', function() {
       isComposing = false;
       logEvent('hiddenInput-compositionend', `IME入力終了: "${hiddenInput.value}"`);
-      // IME確定時の処理
-      const newText = hiddenInput.value.slice(inputBuffer.length);
-      if (newText) {
-        mathField.write(newText);
+      
+      // IME入力完了時は最終的な文字列を処理
+      const finalValue = hiddenInput.value;
+      if (finalValue !== lastInputValue) {
+        // 前の文字を削除
+        if (lastInputValue) {
+          for (let i = 0; i < lastInputValue.length; i++) {
+            mathField.keystroke('Backspace');
+          }
+        }
+        // 新しい文字を挿入
+        if (finalValue) {
+          mathField.write(finalValue);
+        }
       }
-      // バッファをリセット
-      inputBuffer = '';
+      
       hiddenInput.value = '';
-    });    // スマホでのキーボード表示のため、定期的に隠しinputにフォーカスを当てる
+      lastInputValue = '';
+    });
+
+    // スマホでのキーボード表示のため、定期的に隠しinputにフォーカスを当てる
     let focusInterval;
     
     mathFieldSpan.addEventListener('focusin', function() {
@@ -207,28 +242,17 @@
       // スマホの場合、隠しinputにもフォーカスを当てる
       if (isMobile()) {
         clearInterval(focusInterval);
-        // より頻繁にチェックしてリアルタイム性を向上
         focusInterval = setInterval(() => {
           if (document.activeElement !== hiddenInput) {
             hiddenInput.focus();
           }
-        }, 200);
+        }, 500);
       }
     });
 
     mathFieldSpan.addEventListener('focusout', function() {
       logEvent('mathField-focusout', 'MathFieldからフォーカスアウト');
       clearInterval(focusInterval);
-      // フォーカスアウト時に残りの入力を処理
-      if (hiddenInput.value && !isComposing) {
-        const remainingText = hiddenInput.value.slice(inputBuffer.length);
-        if (remainingText) {
-          logEvent('hiddenInput-focusout', `残り入力処理: "${remainingText}"`);
-          mathField.write(remainingText);
-        }
-        hiddenInput.value = '';
-        inputBuffer = '';
-      }
     });
 
     // モバイルデバイス判定
@@ -272,53 +296,17 @@
 
     hiddenInput.addEventListener('blur', e => {
       logEvent('hiddenInput-blur', '隠しinputがブラー');
-      // ブラー時に残りの入力があれば処理
-      if (hiddenInput.value && !isComposing) {
-        const remainingText = hiddenInput.value.slice(inputBuffer.length);
-        if (remainingText) {
-          logEvent('hiddenInput-blur-process', `ブラー時処理: "${remainingText}"`);
-          mathField.write(remainingText);
-        }
-        hiddenInput.value = '';
-        inputBuffer = '';
-      }
-      
-      // スマホの場合、短時間後にMathQuillにフォーカスを戻す
+      // ブラーしたらすぐにMathQuillにフォーカスを戻す
       if (isMobile()) {
         setTimeout(() => {
           mathField.focus();
         }, 10);
       }
-    });    // キーボードイベントも隠しinputで監視
+    });
+
+    // キーボードイベントも隠しinputで監視
     hiddenInput.addEventListener('keydown', e => {
       logEvent('hiddenInput-keydown', `key: ${e.key || 'undefined'}, code: ${e.code || 'undefined'}`);
-      
-      // Backspaceなどの特殊キーはリアルタイムで処理
-      if (e.key === 'Backspace' && !isComposing) {
-        e.preventDefault();
-        mathField.keystroke('Backspace');
-        logEvent('hiddenInput-backspace', 'バックスペース処理');
-      } else if (e.key === 'Enter' && !isComposing) {
-        e.preventDefault();
-        mathField.keystroke('Enter');
-        logEvent('hiddenInput-enter', 'エンター処理');
-      } else if (e.key === 'ArrowLeft' && !isComposing) {
-        e.preventDefault();
-        mathField.keystroke('Left');
-        logEvent('hiddenInput-arrow', '左矢印処理');
-      } else if (e.key === 'ArrowRight' && !isComposing) {
-        e.preventDefault();
-        mathField.keystroke('Right');
-        logEvent('hiddenInput-arrow', '右矢印処理');
-      } else if (e.key === 'ArrowUp' && !isComposing) {
-        e.preventDefault();
-        mathField.keystroke('Up');
-        logEvent('hiddenInput-arrow', '上矢印処理');
-      } else if (e.key === 'ArrowDown' && !isComposing) {
-        e.preventDefault();
-        mathField.keystroke('Down');
-        logEvent('hiddenInput-arrow', '下矢印処理');
-      }
     });
 
     let logCount = 0;
