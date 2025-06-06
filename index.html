@@ -176,15 +176,15 @@
         </div>
     </div>
 
-    <!-- FFmpeg CDN読み込み -->
-    <script type="module">
-        // FFmpegとCoreの読み込み
-        let FFmpeg, fetchFile, toBlobURL;
+    <!-- FFmpeg UMD CDN読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/util.min.js"></script>
+    <script>
         let ffmpeg = null;
         let isLoaded = false;
         let isInitialized = false;
+        let fetchFile = window.FFmpegUtil.fetchFile;
 
-        // ログ出力関数
         function log(message) {
             const timestamp = new Date().toLocaleTimeString();
             const logArea = document.getElementById('log-area');
@@ -193,38 +193,29 @@
             console.log(message);
         }
 
-        // ステータス更新関数
         function updateStatus(elementId, status, message) {
             const element = document.getElementById(elementId);
             element.className = `status ${status}`;
             element.textContent = message;
         }
 
-        // ログクリア関数
         window.clearLog = function() {
             document.getElementById('log-area').textContent = '';
         }
 
-        // FFmpeg読み込みテスト
         window.testFFmpegLoad = async function() {
             try {
                 updateStatus('load-status', 'loading', '読み込み中...');
                 log('FFmpegライブラリの読み込みを開始...');
-                
-                // CDN経由でFFmpegを読み込み
-                const FFmpegModule = await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js');
-                const UtilModule = await import('https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js');
-                
-                FFmpeg = FFmpegModule.FFmpeg;
-                fetchFile = UtilModule.fetchFile;
-                toBlobURL = UtilModule.toBlobURL;
-                
-                log('FFmpegライブラリの読み込み完了');
-                updateStatus('load-status', 'success', '読み込み成功');
-                
-                isLoaded = true;
-                document.getElementById('init-btn').disabled = false;
-                
+                // UMDビルドはwindow.FFmpegで参照可能
+                if (window.FFmpeg && window.FFmpegUtil) {
+                    log('FFmpegライブラリの読み込み完了');
+                    updateStatus('load-status', 'success', '読み込み成功');
+                    isLoaded = true;
+                    document.getElementById('init-btn').disabled = false;
+                } else {
+                    throw new Error('FFmpeg UMDライブラリがwindowに見つかりません');
+                }
             } catch (error) {
                 log(`FFmpeg読み込みエラー: ${error.message}`);
                 updateStatus('load-status', 'error', `読み込み失敗: ${error.message}`);
@@ -232,20 +223,15 @@
             }
         }
 
-        // FFmpeg初期化テスト
         window.testFFmpegInit = async function() {
             if (!isLoaded) {
                 log('エラー: FFmpegライブラリが読み込まれていません');
                 return;
             }
-
             try {
                 updateStatus('init-status', 'loading', '初期化中...');
                 log('FFmpegの初期化を開始...');
-                
-                ffmpeg = new FFmpeg();
-                
-                // プログレスイベントの設定
+                ffmpeg = new window.FFmpeg.FFmpeg();
                 ffmpeg.on('progress', ({ progress, time }) => {
                     const progressBar = document.getElementById('progress-bar');
                     if (progressBar) {
@@ -253,32 +239,24 @@
                     }
                     log(`処理進行中: ${Math.round(progress * 100)}% (時間: ${time}μs)`);
                 });
-
-                // ログイベントの設定
                 ffmpeg.on('log', ({ message }) => {
                     log(`FFmpeg: ${message}`);
                 });
-
-                // CoreのCDN URLを取得
-                const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-                const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
-                const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
-                
-                // FFmpegを初期化（SharedArrayBufferを使用しない）
+                // UMD用のCORS対応CDNパス
+                const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
+                const coreURL = `${baseURL}/ffmpeg-core.js`;
+                const wasmURL = `${baseURL}/ffmpeg-core.wasm`;
+                const workerURL = `${baseURL}/ffmpeg-core.worker.js`;
                 await ffmpeg.load({
                     coreURL,
                     wasmURL,
-                    // SharedArrayBufferを無効化
-                    classWorkerURL: null
+                    workerURL
                 });
-                
                 log('FFmpegの初期化完了');
                 updateStatus('init-status', 'success', '初期化成功');
-                
                 isInitialized = true;
                 document.getElementById('create-btn').disabled = false;
                 document.getElementById('process-btn').disabled = false;
-                
             } catch (error) {
                 log(`FFmpeg初期化エラー: ${error.message}`);
                 updateStatus('init-status', 'error', `初期化失敗: ${error.message}`);
@@ -286,20 +264,15 @@
             }
         }
 
-        // テスト動画作成
         window.createTestVideo = async function() {
             if (!isInitialized) {
                 log('エラー: FFmpegが初期化されていません');
                 return;
             }
-
             try {
                 updateStatus('process-status', 'loading', 'テスト動画を作成中...');
                 log('テスト動画の作成を開始...');
-                
                 document.getElementById('progress-container').style.display = 'block';
-                
-                // 簡単なテスト動画を作成（5秒間の色変化）
                 await ffmpeg.exec([
                     '-f', 'lavfi',
                     '-i', 'testsrc2=duration=5:size=640x480:rate=30',
@@ -307,22 +280,15 @@
                     '-pix_fmt', 'yuv420p',
                     'test_output.mp4'
                 ]);
-                
-                // 作成された動画を取得
                 const fileData = await ffmpeg.readFile('test_output.mp4');
                 const videoBlob = new Blob([fileData.buffer], { type: 'video/mp4' });
                 const videoURL = URL.createObjectURL(videoBlob);
-                
-                // 動画を表示
                 const videoElement = document.getElementById('output-video');
                 videoElement.src = videoURL;
                 videoElement.style.display = 'block';
-                
                 log('テスト動画の作成完了');
                 updateStatus('process-status', 'success', 'テスト動画作成成功');
-                
                 document.getElementById('progress-container').style.display = 'none';
-                
             } catch (error) {
                 log(`テスト動画作成エラー: ${error.message}`);
                 updateStatus('process-status', 'error', `作成失敗: ${error.message}`);
@@ -330,32 +296,23 @@
             }
         }
 
-        // 動画処理実行
         window.processVideo = async function() {
             if (!isInitialized) {
                 log('エラー: FFmpegが初期化されていません');
                 return;
             }
-
             const fileInput = document.getElementById('video-input');
             if (!fileInput.files[0]) {
                 log('エラー: 動画ファイルが選択されていません');
                 return;
             }
-
             try {
                 updateStatus('process-status', 'loading', '動画を処理中...');
                 log('動画処理を開始...');
-                
                 document.getElementById('progress-container').style.display = 'block';
-                
                 const inputFile = fileInput.files[0];
                 const inputData = await fetchFile(inputFile);
-                
-                // 入力ファイルをFFmpegに書き込み
                 await ffmpeg.writeFile('input.mp4', inputData);
-                
-                // 動画処理（例：サイズ変更とフォーマット変換）
                 await ffmpeg.exec([
                     '-i', 'input.mp4',
                     '-vf', 'scale=640:480',
@@ -364,22 +321,15 @@
                     '-c:a', 'aac',
                     'output.mp4'
                 ]);
-                
-                // 処理された動画を取得
                 const outputData = await ffmpeg.readFile('output.mp4');
                 const outputBlob = new Blob([outputData.buffer], { type: 'video/mp4' });
                 const outputURL = URL.createObjectURL(outputBlob);
-                
-                // 処理された動画を表示
                 const videoElement = document.getElementById('output-video');
                 videoElement.src = outputURL;
                 videoElement.style.display = 'block';
-                
                 log('動画処理完了');
                 updateStatus('process-status', 'success', '動画処理成功');
-                
                 document.getElementById('progress-container').style.display = 'none';
-                
             } catch (error) {
                 log(`動画処理エラー: ${error.message}`);
                 updateStatus('process-status', 'error', `処理失敗: ${error.message}`);
@@ -387,7 +337,6 @@
             }
         }
 
-        // ページ読み込み時にFFmpeg読み込みテストを実行
         document.addEventListener('DOMContentLoaded', function() {
             log('ページ読み込み完了');
             testFFmpegLoad();
