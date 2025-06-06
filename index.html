@@ -250,25 +250,30 @@
           }
         }, 500);
       }
-    });
-
-    mathFieldSpan.addEventListener('focusout', function() {
+    });    mathFieldSpan.addEventListener('focusout', function() {
       logEvent('mathField-focusout', 'MathFieldからフォーカスアウト');
-      userIntentionallyBlurred = true; // ユーザーが意図的にフォーカスアウトしたフラグ
-      clearInterval(focusInterval);
-    });    // モバイルデバイス判定
+      // 少し遅延してからフラグを設定（自動フォーカス復帰との競合を避ける）
+      setTimeout(() => {
+        if (document.activeElement !== hiddenInput && !mathFieldSpan.contains(document.activeElement)) {
+          userIntentionallyBlurred = true;
+          clearInterval(focusInterval);
+          logEvent('mathField-confirmed-blur', 'フォーカスアウト確定');
+        }
+      }, 150);
+    });// モバイルデバイス判定
     function isMobile() {
       return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
              ('ontouchstart' in window) || 
              (navigator.maxTouchPoints > 0);
-    }
-
-    // 外部クリック検出（MathField外をクリックした場合）
+    }    // 外部クリック検出（MathField外をクリックした場合）
     document.addEventListener('click', function(e) {
       if (!mathFieldSpan.contains(e.target) && !hiddenInput.contains(e.target)) {
         logEvent('external-click', 'MathField外をクリック');
-        userIntentionallyBlurred = true;
-        clearInterval(focusInterval);
+        // 少し遅延してからフラグを設定（フォーカス復帰処理と競合を避ける）
+        setTimeout(() => {
+          userIntentionallyBlurred = true;
+          clearInterval(focusInterval);
+        }, 50);
       }
     });
 
@@ -276,8 +281,11 @@
     document.addEventListener('touchstart', function(e) {
       if (!mathFieldSpan.contains(e.target) && !hiddenInput.contains(e.target)) {
         logEvent('external-touch', 'MathField外をタッチ');
-        userIntentionallyBlurred = true;
-        clearInterval(focusInterval);
+        // 少し遅延してからフラグを設定（フォーカス復帰処理と競合を避ける）
+        setTimeout(() => {
+          userIntentionallyBlurred = true;
+          clearInterval(focusInterval);
+        }, 50);
       }
     });
 
@@ -311,17 +319,17 @@
     });    // 隠しinputのイベントも監視
     hiddenInput.addEventListener('focus', e => {
       logEvent('hiddenInput-focus', '隠しinputがフォーカス');
-    });
-
-    hiddenInput.addEventListener('blur', e => {
+    });    hiddenInput.addEventListener('blur', e => {
       logEvent('hiddenInput-blur', '隠しinputがブラー');
       // ユーザーが意図的にフォーカスアウトしていない場合のみ自動復帰
       if (isMobile() && !userIntentionallyBlurred) {
         setTimeout(() => {
+          // 再度チェックして、まだユーザーが意図的にブラーしていない場合のみフォーカス復帰
           if (!userIntentionallyBlurred) {
+            logEvent('hiddenInput-auto-focus', 'MathFieldに自動フォーカス復帰');
             mathField.focus();
           }
-        }, 10);
+        }, 100); // 遅延を長くして外部クリック検出との競合を避ける
       }
     });
 
