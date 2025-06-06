@@ -2,20 +2,111 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MathQuill テストサイト</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/mathquill/0.10.1/mathquill.min.css">
   <style>
-    body { font-family: sans-serif; margin: 2em; }
-    #math-field { min-height: 2em; border: 1px solid #ccc; padding: 0.5em; width: 400px; }
-    #log { margin-top: 2em; background: #f9f9f9; border: 1px solid #ddd; padding: 1em; height: 200px; overflow-y: auto; }
-    .log-entry { font-size: 0.95em; margin-bottom: 0.5em; }
+    body { 
+      font-family: sans-serif; 
+      margin: 2em; 
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 2em;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 1.5em;
+    }
+    #math-field { 
+      min-height: 3em; 
+      border: 2px solid #ddd; 
+      padding: 1em; 
+      width: 100%;
+      border-radius: 4px;
+      font-size: 18px;
+      background: white;
+      transition: border-color 0.2s;
+    }
+    #math-field:focus-within {
+      border-color: #4CAF50;
+      outline: none;
+    }
+    #hidden-input {
+      position: absolute;
+      left: -9999px;
+      top: -9999px;
+      opacity: 0;
+      pointer-events: none;
+    }
+    #log { 
+      margin-top: 2em; 
+      background: #f9f9f9; 
+      border: 1px solid #ddd; 
+      padding: 1em; 
+      height: 300px; 
+      overflow-y: auto; 
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .log-entry { 
+      font-size: 0.9em; 
+      margin-bottom: 0.5em; 
+      padding: 2px 0;
+      border-bottom: 1px solid #eee;
+    }
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+    .log-number {
+      color: #666;
+      font-weight: bold;
+    }
+    .log-time {
+      color: #888;
+    }
+    .log-event {
+      color: #2196F3;
+      font-weight: bold;
+    }
+    .log-detail {
+      color: #333;
+    }
+    .clear-btn {
+      margin-top: 1em;
+      padding: 0.5em 1em;
+      background: #f44336;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .clear-btn:hover {
+      background: #d32f2f;
+    }
+    @media (max-width: 600px) {
+      body { margin: 1em; }
+      .container { padding: 1em; }
+      #math-field { font-size: 16px; }
+    }
   </style>
 </head>
 <body>
-  <h1>MathQuill 数式入力テスト</h1>
-  <div id="math-field"></div>
-  <input id="hidden-input" type="text" style="position:absolute;left:-9999px;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-  <div id="log"></div>
+  <div class="container">
+    <h1>📐 MathQuill 数式入力テスト</h1>
+    <div id="math-field"></div>
+    <input id="hidden-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    
+    <h3>📊 イベントログ</h3>
+    <div id="log"></div>
+    <button class="clear-btn" onclick="clearLog()">ログをクリア</button>
+  </div>
 
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mathquill/0.10.1/mathquill.min.js"></script>
@@ -27,52 +118,92 @@
     
     const mathField = MQ.MathField(mathFieldSpan, {
       spaceBehavesLikeTab: true,
+      leftRightIntoCmdGoes: 'up',
+      restrictMismatchedBrackets: true,
+      supSubsRequireOperand: true,
+      charsThatBreakOutOfSupSub: '+-=<>',
+      autoSubscriptNumerals: true,
       handlers: {
         edit: function(field) {
-          logEvent('edit', field.latex());
+          logEvent('edit', `LaTeX: ${field.latex()}`);
         },
         enter: function(field) {
-          logEvent('enter', field.latex());
+          logEvent('enter', `LaTeX: ${field.latex()}`);
         },
         upOutOf: function(field) {
-          logEvent('upOutOf', field.latex());
+          logEvent('upOutOf', `LaTeX: ${field.latex()}`);
         },
         downOutOf: function(field) {
-          logEvent('downOutOf', field.latex());
+          logEvent('downOutOf', `LaTeX: ${field.latex()}`);
+        },
+        selectOutOf: function(field) {
+          logEvent('selectOutOf', `LaTeX: ${field.latex()}`);
+        },
+        deleteOutOf: function(field) {
+          logEvent('deleteOutOf', `LaTeX: ${field.latex()}`);
         }
       }
     });
 
-    // スマホ対応: タッチ時に隠しinputへフォーカス（位置や表示状態は変えない）
+    // スマホ対応: タッチ時に隠しinputへフォーカス
     mathFieldSpan.addEventListener('touchstart', function() {
+      logEvent('touchstart', 'スマホタッチ検出 - 隠しinputにフォーカス');
       hiddenInput.focus();
     });
-    // 隠しinputの内容をMathQuillへ反映
-    hiddenInput.addEventListener('input', function() {
-      mathField.write(hiddenInput.value);
-      hiddenInput.value = '';
-      // MathQuillのfocusも維持
-      mathField.focus();
+
+    // クリック時も隠しinputにフォーカス（スマホ・PC両対応）
+    mathFieldSpan.addEventListener('click', function() {
+      logEvent('click', 'クリック検出');
+      hiddenInput.focus();
     });
 
-    // その他のイベントも監視
+    // 隠しinputの内容をMathQuillへ反映
+    hiddenInput.addEventListener('input', function() {
+      if (hiddenInput.value) {
+        logEvent('hiddenInput', `入力値: "${hiddenInput.value}"`);
+        mathField.write(hiddenInput.value);
+        hiddenInput.value = '';
+        // MathQuillのfocusも維持
+        mathField.focus();
+      }
+    });
+
+    // その他のイベント監視
     mathFieldSpan.addEventListener('keydown', e => {
-      logEvent('keydown', `key: ${e.key !== undefined ? e.key : 'undefined'}`);
+      logEvent('keydown', `key: ${e.key !== undefined ? e.key : 'undefined'}, code: ${e.code || 'undefined'}`);
     });
+
+    mathFieldSpan.addEventListener('keyup', e => {
+      logEvent('keyup', `key: ${e.key !== undefined ? e.key : 'undefined'}`);
+    });
+
     mathFieldSpan.addEventListener('input', e => {
-      logEvent('input', '');
+      logEvent('input', 'input event fired');
     });
+
     mathFieldSpan.addEventListener('focus', e => {
-      logEvent('focus', '');
+      logEvent('focus', 'MathField focused');
     });
+
     mathFieldSpan.addEventListener('blur', e => {
-      logEvent('blur', '');
+      logEvent('blur', 'MathField blurred');
     });
+
     mathFieldSpan.addEventListener('compositionstart', e => {
-      logEvent('compositionstart', '');
+      logEvent('compositionstart', 'IME composition started');
     });
+
     mathFieldSpan.addEventListener('compositionend', e => {
-      logEvent('compositionend', '');
+      logEvent('compositionend', `IME composition ended: "${e.data || ''}"`);
+    });
+
+    // 隠しinputのイベントも監視
+    hiddenInput.addEventListener('focus', e => {
+      logEvent('hiddenInput-focus', '隠しinputがフォーカス');
+    });
+
+    hiddenInput.addEventListener('blur', e => {
+      logEvent('hiddenInput-blur', '隠しinputがブラー');
     });
 
     let logCount = 0;
@@ -80,10 +211,19 @@
       logCount++;
       const entry = document.createElement('div');
       entry.className = 'log-entry';
-      entry.textContent = `${logCount}. [${new Date().toLocaleTimeString()}] ${type}: ${detail}`;
+      entry.innerHTML = `<span class="log-number">${logCount}.</span> <span class="log-time">[${new Date().toLocaleTimeString()}]</span> <span class="log-event">${type}</span>: <span class="log-detail">${detail}</span>`;
       logDiv.appendChild(entry);
       logDiv.scrollTop = logDiv.scrollHeight;
     }
+
+    function clearLog() {
+      logDiv.innerHTML = '';
+      logCount = 0;
+      logEvent('system', 'ログをクリアしました');
+    }
+
+    // 初期化完了ログ
+    logEvent('system', 'MathQuill初期化完了');
   </script>
 </body>
 </html>
