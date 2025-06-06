@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MathQuill テストサイト</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/mathquill/0.10.1/mathquill.min.css">
+  <style>
+    body { 
+      font-family: sans-serif; 
+      margin: 2em; 
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 2em;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 1.5em;
+    }
+    #math-field { 
+      min-height: 3em; 
+      border: 2px solid #ddd; 
+      padding: 1em; 
+      width: 100%;
+      border-radius: 4px;
+      font-size: 18px;
+      background: white;
+      transition: border-color 0.2s;
+    }
+    #math-field:focus-within {
+      border-color: #4CAF50;
+      outline: none;
+    }    #hidden-input {
+      position: absolute;
+      left: -9999px;
+      top: -9999px;
+      opacity: 0;
+      pointer-events: none;
+      width: 1px;
+      height: 1px;
+      font-size: 16px;
+      border: none;
+      outline: none;
+      background: transparent;
+    }
+    #log { 
+      margin-top: 2em; 
+      background: #f9f9f9; 
+      border: 1px solid #ddd; 
+      padding: 1em; 
+      height: 300px; 
+      overflow-y: auto; 
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .log-entry { 
+      font-size: 0.9em; 
+      margin-bottom: 0.5em; 
+      padding: 2px 0;
+      border-bottom: 1px solid #eee;
+    }
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+    .log-number {
+      color: #666;
+      font-weight: bold;
+    }
+    .log-time {
+      color: #888;
+    }
+    .log-event {
+      color: #2196F3;
+      font-weight: bold;
+    }
+    .log-detail {
+      color: #333;
+    }
+    .clear-btn {
+      margin-top: 1em;
+      padding: 0.5em 1em;
+      background: #f44336;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .clear-btn:hover {
+      background: #d32f2f;
+    }
+    @media (max-width: 600px) {
+      body { margin: 1em; }
+      .container { padding: 1em; }
+      #math-field { font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📐 MathQuill 数式入力テスト</h1>
+    <div id="math-field"></div>
+    
+    <h3>📊 イベントログ</h3>
+    <div id="log"></div>
+    <button class="clear-btn" onclick="clearLog()">ログをクリア</button>
+    
+    <h3>🔧 操作パネル</h3>
+    <div style="margin-top: 1em;">
+      <button onclick="getLatex()" style="margin: 0.5em; padding: 0.5em 1em; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer;">LaTeX取得</button>
+      <button onclick="setLatex()" style="margin: 0.5em; padding: 0.5em 1em; background: #FF9800; color: white; border: none; border-radius: 4px; cursor: pointer;">サンプル式設定</button>
+      <button onclick="clearMath()" style="margin: 0.5em; padding: 0.5em 1em; background: #9C27B0; color: white; border: none; border-radius: 4px; cursor: pointer;">数式クリア</button>
+    </div>
+    <div id="latex-output" style="margin-top: 1em; padding: 1em; background: #e8f5e8; border-radius: 4px; font-family: monospace; min-height: 1em;"></div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathquill/0.10.1/mathquill.min.js"></script>
+  <script src="script/MathQuillEditor.js"></script>
+  <script>
+    let mathEditor;
+    
+    // Initialize MathQuill Editor
+    window.addEventListener('DOMContentLoaded', function() {
+      try {
+        mathEditor = new MathQuillEditor('math-field', {
+          enableMobileSupport: true,
+          enableLogging: true,
+          logContainer: 'log',
+          onEdit: function(field) {
+            // Custom edit handler - automatically update LaTeX display
+            updateLatexDisplay();
+          }
+        });
+        console.log('MathQuillEditor initialized successfully');
+      } catch (error) {
+        console.error('Failed to initialize MathQuillEditor:', error);
+        document.getElementById('latex-output').textContent = 'Error: ' + error.message;
+      }
+    });
+    
+    // Helper functions for the demo
+    function getLatex() {
+      if (!mathEditor) {
+        console.error('MathQuillEditor not initialized');
+        return;
+      }
+      const latex = mathEditor.getLatex();
+      document.getElementById('latex-output').textContent = `LaTeX: ${latex}`;
+      console.log('Current LaTeX:', latex);
+    }
+    
+    function setLatex() {
+      if (!mathEditor) {
+        console.error('MathQuillEditor not initialized');
+        return;
+      }
+      const sampleLatex = '\\frac{x^2+2x+1}{x-1} = \\sqrt{\\alpha + \\beta}';
+      mathEditor.setLatex(sampleLatex);
+      updateLatexDisplay();
+    }
+    
+    function clearMath() {
+      if (!mathEditor) {
+        console.error('MathQuillEditor not initialized');
+        return;
+      }
+      mathEditor.clear();
+      updateLatexDisplay();
+    }
+    
+    function clearLog() {
+      if (!mathEditor) {
+        console.error('MathQuillEditor not initialized');
+        return;
+      }
+      mathEditor.clearLog();
+    }
+    
+    function updateLatexDisplay() {
+      if (!mathEditor) {
+        return;
+      }
+      const latex = mathEditor.getLatex();
+      document.getElementById('latex-output').textContent = latex ? `LaTeX: ${latex}` : 'LaTeX: (empty)';
+    }
+  </script>
+</body>
+</html>
