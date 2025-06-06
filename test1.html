@@ -456,9 +456,7 @@
             hiddenInput.addEventListener('input', function (e) {
                 const currentValue = this.value;
                 addLog('hidden', `入力イベント: "${currentValue}" (前回: "${lastInputValue}")`);
-                if (!isComposing) {
-                    processHiddenInput();
-                }
+                processHiddenInput(); // isComposing関係なく常に呼ぶ
             });
 
             hiddenInput.addEventListener('keydown', function (e) {
@@ -478,6 +476,7 @@
             });
             hiddenInput.addEventListener('compositionupdate', function (e) {
                 addLog('ime', 'IME更新', `データ: "${e.data || ''}"`);
+                processHiddenInput(); // IME変換中もリアルタイム反映
             });
             hiddenInput.addEventListener('compositionend', function (e) {
                 isComposing = false;
