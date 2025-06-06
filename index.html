@@ -259,17 +259,17 @@
                     log(`FFmpeg: ${message}`);
                 });
 
-                // Corrected baseURL for @ffmpeg/core UMD build
-                const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
+                // CoreのCDN URLを取得
+                const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
                 const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
                 const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
-                // Corrected worker script name for the UMD build
-                const workerURL = `${baseURL}/ffmpeg-core.worker.js`; 
                 
+                // FFmpegを初期化（SharedArrayBufferを使用しない）
                 await ffmpeg.load({
                     coreURL,
                     wasmURL,
-                    workerURL
+                    // SharedArrayBufferを無効化
+                    classWorkerURL: null
                 });
                 
                 log('FFmpegの初期化完了');
