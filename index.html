@@ -37,13 +37,18 @@
     #math-field:focus-within {
       border-color: #4CAF50;
       outline: none;
-    }
-    #hidden-input {
+    }    #hidden-input {
       position: absolute;
       left: -9999px;
       top: -9999px;
       opacity: 0;
       pointer-events: none;
+      width: 1px;
+      height: 1px;
+      font-size: 16px;
+      border: none;
+      outline: none;
+      background: transparent;
     }
     #log { 
       margin-top: 2em; 
@@ -143,30 +148,78 @@
           logEvent('deleteOutOf', `LaTeX: ${field.latex()}`);
         }
       }
+    });    // スマホ対応: タッチ時の処理
+    mathFieldSpan.addEventListener('touchstart', function(e) {
+      logEvent('touchstart', 'スマホタッチ検出');
+      e.preventDefault();
+      // 少し遅延してからMathQuillにフォーカス
+      setTimeout(() => {
+        mathField.focus();
+      }, 100);
     });
 
-    // スマホ対応: タッチ時に隠しinputへフォーカス
-    mathFieldSpan.addEventListener('touchstart', function() {
-      logEvent('touchstart', 'スマホタッチ検出 - 隠しinputにフォーカス');
-      hiddenInput.focus();
-    });
-
-    // クリック時も隠しinputにフォーカス（スマホ・PC両対応）
-    mathFieldSpan.addEventListener('click', function() {
+    // クリック時の処理
+    mathFieldSpan.addEventListener('click', function(e) {
       logEvent('click', 'クリック検出');
-      hiddenInput.focus();
+      e.preventDefault();
+      // MathQuillに直接フォーカス
+      mathField.focus();
     });
 
+    // スマホのキーボード入力をキャッチするため
+    let isComposing = false;
+    
     // 隠しinputの内容をMathQuillへ反映
     hiddenInput.addEventListener('input', function() {
-      if (hiddenInput.value) {
+      if (hiddenInput.value && !isComposing) {
         logEvent('hiddenInput', `入力値: "${hiddenInput.value}"`);
         mathField.write(hiddenInput.value);
         hiddenInput.value = '';
-        // MathQuillのfocusも維持
-        mathField.focus();
       }
     });
+
+    // IME入力の開始と終了を監視
+    hiddenInput.addEventListener('compositionstart', function() {
+      isComposing = true;
+      logEvent('hiddenInput-compositionstart', 'IME入力開始');
+    });
+
+    hiddenInput.addEventListener('compositionend', function() {
+      isComposing = false;
+      logEvent('hiddenInput-compositionend', `IME入力終了: "${hiddenInput.value}"`);
+      if (hiddenInput.value) {
+        mathField.write(hiddenInput.value);
+        hiddenInput.value = '';
+      }
+    });
+
+    // スマホでのキーボード表示のため、定期的に隠しinputにフォーカスを当てる
+    let focusInterval;
+    
+    mathFieldSpan.addEventListener('focusin', function() {
+      logEvent('mathField-focusin', 'MathField内でフォーカス');
+      // スマホの場合、隠しinputにもフォーカスを当てる
+      if (isMobile()) {
+        clearInterval(focusInterval);
+        focusInterval = setInterval(() => {
+          if (document.activeElement !== hiddenInput) {
+            hiddenInput.focus();
+          }
+        }, 500);
+      }
+    });
+
+    mathFieldSpan.addEventListener('focusout', function() {
+      logEvent('mathField-focusout', 'MathFieldからフォーカスアウト');
+      clearInterval(focusInterval);
+    });
+
+    // モバイルデバイス判定
+    function isMobile() {
+      return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+             ('ontouchstart' in window) || 
+             (navigator.maxTouchPoints > 0);
+    }
 
     // その他のイベント監視
     mathFieldSpan.addEventListener('keydown', e => {
@@ -195,15 +248,24 @@
 
     mathFieldSpan.addEventListener('compositionend', e => {
       logEvent('compositionend', `IME composition ended: "${e.data || ''}"`);
-    });
-
-    // 隠しinputのイベントも監視
+    });    // 隠しinputのイベントも監視
     hiddenInput.addEventListener('focus', e => {
       logEvent('hiddenInput-focus', '隠しinputがフォーカス');
     });
 
     hiddenInput.addEventListener('blur', e => {
       logEvent('hiddenInput-blur', '隠しinputがブラー');
+      // ブラーしたらすぐにMathQuillにフォーカスを戻す
+      if (isMobile()) {
+        setTimeout(() => {
+          mathField.focus();
+        }, 10);
+      }
+    });
+
+    // キーボードイベントも隠しinputで監視
+    hiddenInput.addEventListener('keydown', e => {
+      logEvent('hiddenInput-keydown', `key: ${e.key || 'undefined'}, code: ${e.code || 'undefined'}`);
     });
 
     let logCount = 0;
